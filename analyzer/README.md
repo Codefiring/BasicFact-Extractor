@@ -10,9 +10,9 @@ More specifically, we need the following Clang libraries:
 
 ```makefile
 CLANG_LIBS := -lclangTooling -lclangFrontend -lclangDriver -lclangSerialization \
-             -lclangParse -lclangSema -lclangAnalysis -lclangAST -lclangBasic \
-             -lclangEdit -lclangLex -lclangASTMatchers \
-						 -lclangRewrite
+             -lclangParse -lclangSema -lclangAnalysis -lclangAST \
+             -lclangRewrite -lclangEdit -lclangASTMatchers -lclangLex \
+             -lclangAPINotes -lclangBasic -lclangSupport
 ```
 
 For more information, please refer to the [Makefile](Makefile).
@@ -21,5 +21,5 @@ For more information, please refer to the [Makefile](Makefile).
 ### Prerequisites
 
 ```bash
-sudo apt-get install clang-14 libclang-dev-14
+sudo apt-get install clang-20 libclang-20-dev
 ```
