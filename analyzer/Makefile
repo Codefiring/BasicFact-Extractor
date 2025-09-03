@@ -1,10 +1,11 @@
 # Variables
-LLVM_INCLUDE := $(shell llvm-config-14 --includedir)
-LLVM_FLAGS := $(shell llvm-config-14 --cxxflags --ldflags --libs core)
+LLVM_INCLUDE := $(shell llvm-config-20 --includedir)
+LLVM_FLAGS := $(shell llvm-config-20 --cxxflags --ldflags --libs core)
 CLANG_LIBS := -lclangTooling -lclangFrontend -lclangDriver -lclangSerialization \
-             -lclangParse -lclangSema -lclangAnalysis -lclangAST -lclangBasic \
-             -lclangEdit -lclangLex -lclangASTMatchers \
-						 -lclangRewrite
+             -lclangParse -lclangSema -lclangAnalysis -lclangAST \
+             -lclangRewrite -lclangEdit -lclangASTMatchers -lclangLex \
+             -lclangAPINotes -lclangBasic -lclangSupport
+CXX := clang++-20
 CXXFLAGS := --std=c++17 -pthread
 LOG_FILE := analyze-compile.log
 
@@ -15,10 +16,10 @@ OBJ_FILES=helper.o
 all: analyze usage
 
 analyze: analyze.cpp $(OBJ_FILES)
-	@clang++ $^ -o $@ -I$(LLVM_INCLUDE) $(LLVM_FLAGS) $(CLANG_LIBS) $(CXXFLAGS) 2>&1 | tee $(LOG_FILE)
+	@$(CXX) $^ -o $@ -I$(LLVM_INCLUDE) $(LLVM_FLAGS) $(CLANG_LIBS) $(CXXFLAGS) 2>&1 | tee $(LOG_FILE)
 
 usage: usage.cpp $(OBJ_FILES)
-	@clang++ $^ -o $@ -I$(LLVM_INCLUDE) $(LLVM_FLAGS) $(CLANG_LIBS) $(CXXFLAGS) 2>&1 | tee $(LOG_FILE)
+	@$(CXX) $^ -o $@ -I$(LLVM_INCLUDE) $(LLVM_FLAGS) $(CLANG_LIBS) $(CXXFLAGS) 2>&1 | tee $(LOG_FILE)
 
 # Compiling helper.cpp to an object file
 helper.o: helper.cpp helper.hpp
