@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
 
 # 使用同一前缀的一整套 clang/llvm 14
-CLANG_PREFIX  := /opt/clang-14
+CLANG_PREFIX  := /home/fuzz/code/llvm-14.0.0
 CXX           := $(CLANG_PREFIX)/bin/clang++
 LLVMCONFIG    := $(CLANG_PREFIX)/bin/llvm-config
 
