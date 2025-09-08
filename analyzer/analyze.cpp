@@ -32,6 +32,8 @@ public:
         std::string sourceCode = get_decl_code(recordDecl);
         if (structName != "")
           output_decl(recordDecl, "struct.jsonl");
+        if (recordDecl->isStruct())
+          output_struct_relations(recordDecl, "struct-value.jsonl");
       }
     }
     return true;
@@ -73,8 +75,11 @@ public:
         std::string aliasName = typedefDecl->getNameAsString();
 
         // Output the typedef alias
-        if (aliasName != "")
+        if (aliasName != "") {
           output_decl(typedefDecl, "struct-typedef.jsonl", true, structName);
+          if (recordDecl->isStruct())
+            output_struct_relations(recordDecl, "struct-value.jsonl", aliasName);
+        }
       }
     }
     if (collect_typedef) {
