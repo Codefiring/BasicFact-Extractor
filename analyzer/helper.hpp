@@ -9,6 +9,7 @@
 #include <clang/AST/ASTConsumer.h>
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Expr.h>
+#include <clang/AST/Type.h>
 #include <clang/AST/RecursiveASTVisitor.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/FrontendActions.h>
@@ -56,5 +57,12 @@ private:
 std::string get_decl_code(const clang::NamedDecl *);
 void output_decl(const clang::NamedDecl *decl, std::string output_file_name,
                  bool is_typedef = false, std::string alias_name = "");
+
+void output_enum_values(const clang::EnumDecl *decl,
+                        std::string output_file_name);
+
+void output_struct_relations(const clang::RecordDecl *decl,
+                             std::string output_file_name,
+                             std::string struct_name = "");
 
 #endif
