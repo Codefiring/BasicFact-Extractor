@@ -1,4 +1,5 @@
 #include "helper.hpp"
+#include <llvm/ADT/APSInt.h>
 
 using namespace clang;
 using namespace clang::tooling;
@@ -85,6 +86,48 @@ void output_decl(const NamedDecl *decl, std::string output_file_name,
 
   auto json_str = j.dump();
   output_file << json_str << std::endl;
+  output_file.flush();
+  output_file.close();
+}
+
+void output_enum_values(const EnumDecl *decl, std::string output_file_name) {
+  std::lock_guard<std::mutex> lock(mutex);
+
+  std::string enumName = decl->getNameAsString();
+  if (enumName.empty())
+    return;
+
+  SourceLocation beginLoc = decl->getBeginLoc();
+  SourceManager &sourceManager = decl->getASTContext().getSourceManager();
+
+  std::stringstream filenameWithLine;
+  if (const FileEntry *fileEntry =
+          sourceManager.getFileEntryForID(sourceManager.getFileID(beginLoc))) {
+    filenameWithLine << fileEntry->tryGetRealPathName().str();
+  } else {
+    filenameWithLine << beginLoc.printToString(sourceManager);
+  }
+  unsigned lineNumber = sourceManager.getSpellingLineNumber(beginLoc);
+  filenameWithLine << ":" << lineNumber;
+
+  std::string filename = filenameWithLine.str();
+  std::string key_name = filename + "+" + enumName + "+" + output_file_name;
+  if (existing_filenames.find(key_name) != existing_filenames.end())
+    return;
+  existing_filenames.insert(key_name);
+
+  json values = json::object();
+  for (const auto *ecd : decl->enumerators()) {
+    llvm::APSInt val = ecd->getInitVal();
+    values[ecd->getNameAsString()] = val.getSExtValue();
+  }
+
+  json j;
+  j[enumName] = values;
+
+  std::ofstream output_file;
+  output_file.open(output_file_name, std::ios_base::app);
+  output_file << j.dump() << std::endl;
   output_file.flush();
   output_file.close();
 }

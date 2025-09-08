@@ -57,4 +57,7 @@ std::string get_decl_code(const clang::NamedDecl *);
 void output_decl(const clang::NamedDecl *decl, std::string output_file_name,
                  bool is_typedef = false, std::string alias_name = "");
 
+void output_enum_values(const clang::EnumDecl *decl,
+                        std::string output_file_name);
+
 #endif

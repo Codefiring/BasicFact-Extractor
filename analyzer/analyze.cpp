@@ -45,8 +45,10 @@ public:
       std::string sourceCode = get_decl_code(enumDecl);
 
       // Output the enum definition
-      if (enumName != "")
+      if (enumName != "") {
         output_decl(enumDecl, "enum.jsonl");
+        output_enum_values(enumDecl, "enum-value.jsonl");
+      }
     }
     return true;
   }
