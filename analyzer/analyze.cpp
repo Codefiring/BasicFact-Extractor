@@ -18,11 +18,12 @@ public:
       return true;
     if (funcDecl->isThisDeclarationADefinition()) {
       std::string funcName = funcDecl->getNameAsString();
+      if (funcName.empty() ||
+          funcName.rfind("__compiletime_assert_", 0) == 0)
+        return true;
       std::string sourceCode = get_decl_code(funcDecl);
-      if (funcName != "") {
-        output_decl(funcDecl, "func.jsonl");
-        output_func_params(funcDecl, "func-param.jsonl");
-      }
+      output_decl(funcDecl, "func.jsonl");
+      output_func_params(funcDecl, "func-param.jsonl");
     }
     return true;
   }

@@ -310,7 +310,8 @@ void output_func_params(const FunctionDecl *decl,
   std::lock_guard<std::mutex> lock(mutex);
 
   std::string funcName = decl->getNameAsString();
-  if (funcName.empty())
+  if (funcName.empty() ||
+      funcName.rfind("__compiletime_assert_", 0) == 0)
     return;
 
   SourceLocation beginLoc = decl->getBeginLoc();
