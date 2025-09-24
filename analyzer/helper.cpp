@@ -1,5 +1,6 @@
 #include "helper.hpp"
 #include <llvm/ADT/APSInt.h>
+#include <sstream>
 
 using namespace clang;
 using namespace clang::tooling;
@@ -7,6 +8,63 @@ using json = nlohmann::json;
 
 std::mutex mutex;
 std::set<std::string> existing_filenames;
+
+static std::string get_real_path(const SourceManager &srcMgr,
+                                 SourceLocation loc) {
+  if (loc.isInvalid())
+    return "";
+
+  SourceLocation spellingLoc = srcMgr.getSpellingLoc(loc);
+  if (spellingLoc.isInvalid())
+    return "";
+
+  FileID fileId = srcMgr.getFileID(spellingLoc);
+  if (fileId.isInvalid())
+    return "";
+
+  if (const FileEntry *fileEntry = srcMgr.getFileEntryForID(fileId)) {
+    std::string path = fileEntry->tryGetRealPathName().str();
+    if (path.empty())
+      path = fileEntry->getName().str();
+    return path;
+  }
+
+  std::string printed = spellingLoc.printToString(srcMgr);
+  size_t pos = printed.find(':');
+  if (pos != std::string::npos)
+    printed = printed.substr(0, pos);
+  return printed;
+}
+
+static std::string get_path_with_line(const SourceManager &srcMgr,
+                                      SourceLocation loc) {
+  if (loc.isInvalid())
+    return "";
+
+  SourceLocation spellingLoc = srcMgr.getSpellingLoc(loc);
+  if (spellingLoc.isInvalid())
+    return "";
+
+  std::string path = get_real_path(srcMgr, spellingLoc);
+  if (path.empty())
+    return "";
+
+  unsigned lineNumber = srcMgr.getSpellingLineNumber(spellingLoc);
+  std::ostringstream oss;
+  oss << path << ":" << lineNumber;
+  return oss.str();
+}
+
+static std::string get_filename_from_path(const std::string &path) {
+  if (path.empty())
+    return "";
+
+  std::filesystem::path p(path);
+  if (p.has_filename())
+    return p.filename().string();
+
+  return path;
+}
 
 std::string get_decl_code(const NamedDecl *decl) {
   SourceManager &srcMgr = decl->getASTContext().getSourceManager();
@@ -247,62 +305,61 @@ void output_struct_relations(const RecordDecl *decl,
   output_file.close();
 }
 
-static bool get_type_definition(QualType qt, std::string &filename,
-                                std::string &source) {
-  qt = qt.getCanonicalType();
-
-  if (const auto *pt = qt->getAs<PointerType>())
-    return get_type_definition(pt->getPointeeType(), filename, source);
-
-  if (const auto *at = qt->getAsArrayTypeUnsafe())
-    return get_type_definition(at->getElementType(), filename, source);
-
-  if (const auto *et = qt->getAs<ElaboratedType>())
-    return get_type_definition(et->getNamedType(), filename, source);
-
-  if (const auto *tt = qt->getAs<TypedefType>()) {
-    const TypedefNameDecl *td = tt->getDecl();
-    source = get_decl_code(td);
-    SourceLocation beginLoc = td->getBeginLoc();
-    SourceManager &sourceManager = td->getASTContext().getSourceManager();
-
-    std::stringstream filenameWithLine;
-    if (const FileEntry *fileEntry =
-            sourceManager.getFileEntryForID(sourceManager.getFileID(beginLoc))) {
-      filenameWithLine << fileEntry->tryGetRealPathName().str();
-    } else {
-      filenameWithLine << beginLoc.printToString(sourceManager);
+static QualType peel_type(QualType qt) {
+  while (true) {
+    if (const auto *pt = qt->getAs<PointerType>()) {
+      qt = pt->getPointeeType();
+      continue;
     }
-    unsigned lineNumber = sourceManager.getSpellingLineNumber(beginLoc);
-    filenameWithLine << ":" << lineNumber;
-
-    filename = filenameWithLine.str();
-    return true;
+    if (const auto *at = qt->getAsArrayTypeUnsafe()) {
+      qt = at->getElementType();
+      continue;
+    }
+    if (const auto *rt = qt->getAs<ReferenceType>()) {
+      qt = rt->getPointeeType();
+      continue;
+    }
+    if (const auto *pt = qt->getAs<ParenType>()) {
+      qt = pt->getInnerType();
+      continue;
+    }
+    if (const auto *attr = qt->getAs<AttributedType>()) {
+      qt = attr->getModifiedType();
+      continue;
+    }
+    if (const auto *macro = qt->getAs<MacroQualifiedType>()) {
+      qt = macro->getUnderlyingType();
+      continue;
+    }
+    if (const auto *et = qt->getAs<ElaboratedType>()) {
+      qt = et->getNamedType();
+      continue;
+    }
+    break;
   }
 
-  if (const auto *rt = qt->getAs<RecordType>()) {
-    const RecordDecl *rd = rt->getDecl();
-    const RecordDecl *def = rd->getDefinition();
-    const NamedDecl *used = def ? dyn_cast<NamedDecl>(def) : dyn_cast<NamedDecl>(rd);
-    source = get_decl_code(used);
-    SourceLocation beginLoc = used->getBeginLoc();
-    SourceManager &sourceManager = used->getASTContext().getSourceManager();
+  return qt;
+}
 
-    std::stringstream filenameWithLine;
-    if (const FileEntry *fileEntry =
-            sourceManager.getFileEntryForID(sourceManager.getFileID(beginLoc))) {
-      filenameWithLine << fileEntry->tryGetRealPathName().str();
-    } else {
-      filenameWithLine << beginLoc.printToString(sourceManager);
-    }
-    unsigned lineNumber = sourceManager.getSpellingLineNumber(beginLoc);
-    filenameWithLine << ":" << lineNumber;
+static const NamedDecl *get_type_definition(QualType qt) {
+  qt = peel_type(qt);
 
-    filename = filenameWithLine.str();
-    return true;
+  if (const auto *tt = qt->getAs<TypedefType>())
+    return tt->getDecl();
+
+  QualType canonical = peel_type(qt.getCanonicalType());
+
+  if (const auto *tt = canonical->getAs<TypedefType>())
+    return tt->getDecl();
+
+  if (const auto *tag = canonical->getAs<TagType>()) {
+    const TagDecl *tagDecl = tag->getDecl();
+    if (const TagDecl *def = tagDecl->getDefinition())
+      tagDecl = def;
+    return dyn_cast<NamedDecl>(tagDecl);
   }
 
-  return false;
+  return nullptr;
 }
 
 void output_func_params(const FunctionDecl *decl,
@@ -314,44 +371,89 @@ void output_func_params(const FunctionDecl *decl,
       funcName.rfind("__compiletime_assert_", 0) == 0)
     return;
 
-  SourceLocation beginLoc = decl->getBeginLoc();
-  SourceManager &sourceManager = decl->getASTContext().getSourceManager();
+  const SourceManager &sourceManager = decl->getASTContext().getSourceManager();
 
-  std::stringstream filenameWithLine;
-  if (const FileEntry *fileEntry =
-          sourceManager.getFileEntryForID(sourceManager.getFileID(beginLoc))) {
-    filenameWithLine << fileEntry->tryGetRealPathName().str();
-  } else {
-    filenameWithLine << beginLoc.printToString(sourceManager);
-  }
-  unsigned lineNumber = sourceManager.getSpellingLineNumber(beginLoc);
-  filenameWithLine << ":" << lineNumber;
+  std::string locationKey = get_path_with_line(sourceManager, decl->getBeginLoc());
+  if (locationKey.empty())
+    locationKey = funcName;
 
-  std::string filename = filenameWithLine.str();
-  std::string key_name = filename + "+" + funcName + "+" + output_file_name;
+  std::string key_name = locationKey + "+" + funcName + "+" + output_file_name;
   if (existing_filenames.find(key_name) != existing_filenames.end())
     return;
   existing_filenames.insert(key_name);
 
+  const FunctionDecl *definition = decl->getDefinition();
+  if (!definition)
+    definition = decl;
+
+  const FunctionDecl *firstDecl = decl->getCanonicalDecl();
+  if (!firstDecl)
+    firstDecl = decl;
+
+  std::string declHeaderPath = get_real_path(sourceManager, firstDecl->getBeginLoc());
+  std::string declHeaderName = get_filename_from_path(declHeaderPath);
+
+  std::string defPath = get_real_path(sourceManager, definition->getBeginLoc());
+  std::string defFileName = get_filename_from_path(defPath);
+  std::string defCode = get_decl_code(definition);
+
   json params = json::array();
-  for (const ParmVarDecl *param : decl->parameters()) {
+  for (unsigned index = 0; index < decl->getNumParams(); ++index) {
+    const ParmVarDecl *param = decl->getParamDecl(index);
     json pj;
     pj["name"] = param->getNameAsString();
-    QualType qt = param->getType();
-    pj["type"] = qt.getAsString();
 
-    std::string def_filename;
-    std::string def_source;
-    if (get_type_definition(qt, def_filename, def_source)) {
-      pj["def_filename"] = def_filename;
-      pj["def_source"] = def_source;
+    const ParmVarDecl *declParam = nullptr;
+    if (firstDecl && firstDecl->getNumParams() > index)
+      declParam = firstDecl->getParamDecl(index);
+
+    std::string paramHeaderPath;
+    if (declParam)
+      paramHeaderPath =
+          get_real_path(declParam->getASTContext().getSourceManager(),
+                        declParam->getBeginLoc());
+    if (paramHeaderPath.empty())
+      paramHeaderPath = get_real_path(sourceManager, param->getBeginLoc());
+    std::string paramHeaderName = get_filename_from_path(paramHeaderPath);
+    pj["param_decl_header"] =
+        paramHeaderName.empty() ? json(nullptr) : json(paramHeaderName);
+
+    QualType qt = param->getType();
+    pj["type_spelling"] = qt.getAsString();
+
+    const NamedDecl *typeDecl = get_type_definition(qt);
+    if (typeDecl) {
+      std::string qualifiedName = typeDecl->getQualifiedNameAsString();
+      if (qualifiedName.empty())
+        qualifiedName = typeDecl->getNameAsString();
+      pj["type_decl_qualified_name"] =
+          qualifiedName.empty() ? json(nullptr) : json(qualifiedName);
+
+      const SourceManager &typeSourceManager =
+          typeDecl->getASTContext().getSourceManager();
+      std::string typeHeaderPath =
+          get_real_path(typeSourceManager, typeDecl->getBeginLoc());
+      std::string typeHeaderName = get_filename_from_path(typeHeaderPath);
+      pj["type_decl_header"] =
+          typeHeaderName.empty() ? json(nullptr) : json(typeHeaderName);
+
+      std::string typeCode = get_decl_code(typeDecl);
+      pj["type_decl_code"] = typeCode.empty() ? json(nullptr) : json(typeCode);
+    } else {
+      pj["type_decl_qualified_name"] = nullptr;
+      pj["type_decl_header"] = nullptr;
+      pj["type_decl_code"] = nullptr;
     }
     params.push_back(pj);
   }
 
   json j;
-  j["name"] = funcName;
-  j["filename"] = filename;
+  j["function_name"] = funcName;
+  j["function_decl_header"] =
+      declHeaderName.empty() ? json(nullptr) : json(declHeaderName);
+  j["function_def_file"] =
+      defFileName.empty() ? json(nullptr) : json(defFileName);
+  j["function_def_code"] = defCode.empty() ? json(nullptr) : json(defCode);
   j["params"] = params;
 
   std::ofstream output_file;
