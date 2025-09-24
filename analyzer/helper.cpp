@@ -305,6 +305,27 @@ void output_struct_relations(const RecordDecl *decl,
   output_file.close();
 }
 
+static void collect_called_functions(const Stmt *stmt,
+                                     std::vector<std::string> &ordered,
+                                     std::set<std::string> &seen) {
+  if (!stmt)
+    return;
+
+  if (const auto *call = dyn_cast<CallExpr>(stmt)) {
+    if (const FunctionDecl *callee = call->getDirectCallee()) {
+      std::string calleeName = callee->getNameAsString();
+      if (!calleeName.empty() &&
+          calleeName.rfind("__compiletime_assert_", 0) != 0) {
+        if (seen.insert(calleeName).second)
+          ordered.push_back(calleeName);
+      }
+    }
+  }
+
+  for (const Stmt *child : stmt->children())
+    collect_called_functions(child, ordered, seen);
+}
+
 static QualType peel_type(QualType qt) {
   while (true) {
     if (const auto *pt = qt->getAs<PointerType>()) {
@@ -455,6 +476,45 @@ void output_func_params(const FunctionDecl *decl,
       defFileName.empty() ? json(nullptr) : json(defFileName);
   j["function_def_code"] = defCode.empty() ? json(nullptr) : json(defCode);
   j["params"] = params;
+
+  std::ofstream output_file;
+  output_file.open(output_file_name, std::ios_base::app);
+  output_file << j.dump() << std::endl;
+  output_file.flush();
+  output_file.close();
+}
+
+void output_func_calls(const FunctionDecl *decl, std::string output_file_name) {
+  if (!decl || !decl->doesThisDeclarationHaveABody())
+    return;
+
+  std::lock_guard<std::mutex> lock(mutex);
+
+  std::string funcName = decl->getNameAsString();
+  if (funcName.empty() ||
+      funcName.rfind("__compiletime_assert_", 0) == 0)
+    return;
+
+  const SourceManager &sourceManager = decl->getASTContext().getSourceManager();
+  std::string locationKey = get_path_with_line(sourceManager, decl->getBeginLoc());
+  if (locationKey.empty())
+    locationKey = funcName;
+
+  std::string key_name = locationKey + "+" + funcName + "+" + output_file_name;
+  if (existing_filenames.find(key_name) != existing_filenames.end())
+    return;
+  existing_filenames.insert(key_name);
+
+  std::vector<std::string> ordered;
+  std::set<std::string> seen;
+  collect_called_functions(decl->getBody(), ordered, seen);
+
+  json callees = json::array();
+  for (const auto &name : ordered)
+    callees.push_back(name);
+
+  json j;
+  j[funcName] = callees;
 
   std::ofstream output_file;
   output_file.open(output_file_name, std::ios_base::app);

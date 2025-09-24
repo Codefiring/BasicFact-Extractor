@@ -24,6 +24,7 @@ public:
       std::string sourceCode = get_decl_code(funcDecl);
       output_decl(funcDecl, "func.jsonl");
       output_func_params(funcDecl, "func-param.jsonl");
+      output_func_calls(funcDecl, "func-call.jsonl");
     }
     return true;
   }
