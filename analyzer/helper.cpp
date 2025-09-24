@@ -246,3 +246,116 @@ void output_struct_relations(const RecordDecl *decl,
   output_file.flush();
   output_file.close();
 }
+
+static bool get_type_definition(QualType qt, std::string &filename,
+                                std::string &source) {
+  qt = qt.getCanonicalType();
+
+  if (const auto *pt = qt->getAs<PointerType>())
+    return get_type_definition(pt->getPointeeType(), filename, source);
+
+  if (const auto *at = qt->getAsArrayTypeUnsafe())
+    return get_type_definition(at->getElementType(), filename, source);
+
+  if (const auto *et = qt->getAs<ElaboratedType>())
+    return get_type_definition(et->getNamedType(), filename, source);
+
+  if (const auto *tt = qt->getAs<TypedefType>()) {
+    const TypedefNameDecl *td = tt->getDecl();
+    source = get_decl_code(td);
+    SourceLocation beginLoc = td->getBeginLoc();
+    SourceManager &sourceManager = td->getASTContext().getSourceManager();
+
+    std::stringstream filenameWithLine;
+    if (const FileEntry *fileEntry =
+            sourceManager.getFileEntryForID(sourceManager.getFileID(beginLoc))) {
+      filenameWithLine << fileEntry->tryGetRealPathName().str();
+    } else {
+      filenameWithLine << beginLoc.printToString(sourceManager);
+    }
+    unsigned lineNumber = sourceManager.getSpellingLineNumber(beginLoc);
+    filenameWithLine << ":" << lineNumber;
+
+    filename = filenameWithLine.str();
+    return true;
+  }
+
+  if (const auto *rt = qt->getAs<RecordType>()) {
+    const RecordDecl *rd = rt->getDecl();
+    const RecordDecl *def = rd->getDefinition();
+    const NamedDecl *used = def ? dyn_cast<NamedDecl>(def) : dyn_cast<NamedDecl>(rd);
+    source = get_decl_code(used);
+    SourceLocation beginLoc = used->getBeginLoc();
+    SourceManager &sourceManager = used->getASTContext().getSourceManager();
+
+    std::stringstream filenameWithLine;
+    if (const FileEntry *fileEntry =
+            sourceManager.getFileEntryForID(sourceManager.getFileID(beginLoc))) {
+      filenameWithLine << fileEntry->tryGetRealPathName().str();
+    } else {
+      filenameWithLine << beginLoc.printToString(sourceManager);
+    }
+    unsigned lineNumber = sourceManager.getSpellingLineNumber(beginLoc);
+    filenameWithLine << ":" << lineNumber;
+
+    filename = filenameWithLine.str();
+    return true;
+  }
+
+  return false;
+}
+
+void output_func_params(const FunctionDecl *decl,
+                        std::string output_file_name) {
+  std::lock_guard<std::mutex> lock(mutex);
+
+  std::string funcName = decl->getNameAsString();
+  if (funcName.empty())
+    return;
+
+  SourceLocation beginLoc = decl->getBeginLoc();
+  SourceManager &sourceManager = decl->getASTContext().getSourceManager();
+
+  std::stringstream filenameWithLine;
+  if (const FileEntry *fileEntry =
+          sourceManager.getFileEntryForID(sourceManager.getFileID(beginLoc))) {
+    filenameWithLine << fileEntry->tryGetRealPathName().str();
+  } else {
+    filenameWithLine << beginLoc.printToString(sourceManager);
+  }
+  unsigned lineNumber = sourceManager.getSpellingLineNumber(beginLoc);
+  filenameWithLine << ":" << lineNumber;
+
+  std::string filename = filenameWithLine.str();
+  std::string key_name = filename + "+" + funcName + "+" + output_file_name;
+  if (existing_filenames.find(key_name) != existing_filenames.end())
+    return;
+  existing_filenames.insert(key_name);
+
+  json params = json::array();
+  for (const ParmVarDecl *param : decl->parameters()) {
+    json pj;
+    pj["name"] = param->getNameAsString();
+    QualType qt = param->getType();
+    pj["type"] = qt.getAsString();
+
+    std::string def_filename;
+    std::string def_source;
+    if (get_type_definition(qt, def_filename, def_source)) {
+      pj["def_filename"] = def_filename;
+      pj["def_source"] = def_source;
+    }
+    params.push_back(pj);
+  }
+
+  json j;
+  j["name"] = funcName;
+  j["filename"] = filename;
+  j["params"] = params;
+
+  std::ofstream output_file;
+  output_file.open(output_file_name, std::ios_base::app);
+  output_file << j.dump() << std::endl;
+  output_file.flush();
+  output_file.close();
+}

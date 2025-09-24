@@ -65,4 +65,7 @@ void output_struct_relations(const clang::RecordDecl *decl,
                              std::string output_file_name,
                              std::string struct_name = "");
 
+void output_func_params(const clang::FunctionDecl *decl,
+                        std::string output_file_name);
+
 #endif

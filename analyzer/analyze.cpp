@@ -19,8 +19,10 @@ public:
     if (funcDecl->isThisDeclarationADefinition()) {
       std::string funcName = funcDecl->getNameAsString();
       std::string sourceCode = get_decl_code(funcDecl);
-      if (funcName != "")
+      if (funcName != "") {
         output_decl(funcDecl, "func.jsonl");
+        output_func_params(funcDecl, "func-param.jsonl");
+      }
     }
     return true;
   }
