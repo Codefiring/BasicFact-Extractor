@@ -10,6 +10,8 @@
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Expr.h>
 #include <clang/AST/RecursiveASTVisitor.h>
+#include <clang/Basic/SourceLocation.h>
+#include <clang/Basic/SourceManager.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/FrontendActions.h>
 #include <clang/Tooling/CommonOptionsParser.h>
@@ -56,5 +58,9 @@ private:
 std::string get_decl_code(const clang::NamedDecl *);
 void output_decl(const clang::NamedDecl *decl, std::string output_file_name,
                  bool is_typedef = false, std::string alias_name = "");
+void output_macro(const std::string &name, const std::string &definition,
+                  const clang::SourceManager &sourceManager,
+                  clang::SourceLocation beginLoc,
+                  const std::string &output_file_name = "macro.jsonl");
 
 #endif

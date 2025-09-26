@@ -1,7 +1,72 @@
 #include "helper.hpp"
+#include <clang/Lex/Lexer.h>
+#include <clang/Lex/MacroInfo.h>
+#include <clang/Lex/PPCallbacks.h>
+#include <clang/Lex/Preprocessor.h>
+#include <clang/Lex/Token.h>
 
 using namespace clang;
 using namespace clang::tooling;
+
+class MacroCollector : public PPCallbacks {
+public:
+  explicit MacroCollector(Preprocessor &pp)
+      : preprocessor(pp), langOpts(pp.getLangOpts()) {}
+
+  void MacroDefined(const Token &MacroNameTok,
+                    const MacroDirective *MD) override {
+    const auto *macroInfo = MD->getMacroInfo();
+    if (!macroInfo || macroInfo->isBuiltinMacro())
+      return;
+
+    const SourceManager &sourceManager = preprocessor.getSourceManager();
+    SourceLocation beginLoc = MD->getLocation();
+    if (beginLoc.isInvalid())
+      return;
+
+    SourceLocation spellingLoc = sourceManager.getSpellingLoc(beginLoc);
+    if (sourceManager.isInSystemHeader(spellingLoc) ||
+        sourceManager.isInSystemMacro(spellingLoc))
+      return;
+
+    std::string macroText = getMacroDefinitionText(*macroInfo, *MD);
+    if (macroText.empty())
+      return;
+
+    std::string macroName = MacroNameTok.getIdentifierInfo()->getName().str();
+    output_macro(macroName, macroText, sourceManager, beginLoc);
+  }
+
+private:
+  std::string getMacroDefinitionText(const MacroInfo &macroInfo,
+                                     const MacroDirective &directive) const {
+    const SourceManager &sourceManager = preprocessor.getSourceManager();
+
+    SourceLocation startLoc = directive.getLocation();
+    SourceLocation endLoc = macroInfo.getDefinitionEndLoc();
+    if (startLoc.isInvalid() || endLoc.isInvalid())
+      return "";
+
+    startLoc = sourceManager.getSpellingLoc(startLoc);
+    endLoc = sourceManager.getSpellingLoc(endLoc);
+
+    SourceLocation endOfToken =
+        Lexer::getLocForEndOfToken(endLoc, 0, sourceManager, langOpts);
+    if (endOfToken.isInvalid())
+      return "";
+
+    bool invalid = false;
+    CharSourceRange range = CharSourceRange::getCharRange(startLoc, endOfToken);
+    StringRef text = Lexer::getSourceText(range, sourceManager, langOpts, &invalid);
+    if (invalid)
+      return "";
+
+    return text.str();
+  }
+
+  Preprocessor &preprocessor;
+  const LangOptions &langOpts;
+};
 
 class StructVisitor : public RecursiveASTVisitor<StructVisitor> {
 public:
@@ -158,6 +223,8 @@ public:
   std::unique_ptr<clang::ASTConsumer>
   CreateASTConsumer(clang::CompilerInstance &compiler,
                     llvm::StringRef) override {
+    compiler.getPreprocessor().addPPCallbacks(
+        std::make_unique<MacroCollector>(compiler.getPreprocessor()));
     return std::make_unique<StructConsumer>(&compiler.getASTContext());
   }
 };

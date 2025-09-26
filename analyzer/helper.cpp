@@ -88,3 +88,43 @@ void output_decl(const NamedDecl *decl, std::string output_file_name,
   output_file.flush();
   output_file.close();
 }
+
+void output_macro(const std::string &name, const std::string &definition,
+                  const SourceManager &sourceManager,
+                  SourceLocation beginLoc,
+                  const std::string &output_file_name) {
+  std::lock_guard<std::mutex> lock(mutex);
+
+  std::stringstream filenameWithLine;
+  if (beginLoc.isValid()) {
+    SourceLocation spellingLoc = sourceManager.getSpellingLoc(beginLoc);
+    if (const FileEntry *fileEntry = sourceManager.getFileEntryForID(
+            sourceManager.getFileID(spellingLoc))) {
+      filenameWithLine << fileEntry->tryGetRealPathName().str();
+    } else {
+      filenameWithLine
+          << spellingLoc.printToString(sourceManager);
+    }
+    unsigned lineNumber = sourceManager.getSpellingLineNumber(spellingLoc);
+    filenameWithLine << ":" << lineNumber;
+  }
+
+  std::string filename = filenameWithLine.str();
+  std::string key_name = filename + "+" + name + "+" + output_file_name;
+  if (!filename.empty()) {
+    if (existing_filenames.find(key_name) != existing_filenames.end())
+      return;
+    existing_filenames.insert(key_name);
+  }
+
+  std::ofstream output_file;
+  output_file.open(output_file_name, std::ios_base::app);
+
+  json j = json::object();
+  j[name] = definition;
+
+  auto json_str = j.dump();
+  output_file << json_str << std::endl;
+  output_file.flush();
+  output_file.close();
+}
