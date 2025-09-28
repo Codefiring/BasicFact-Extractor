@@ -25,6 +25,7 @@ public:
       output_decl(funcDecl, "func.jsonl");
       output_func_params(funcDecl, "func-param.jsonl");
       output_func_calls(funcDecl, "func-call.jsonl");
+      output_func_locations(funcDecl, "func-location.jsonl");
     }
     return true;
   }

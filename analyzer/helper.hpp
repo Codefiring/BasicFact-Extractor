@@ -71,6 +71,9 @@ void output_func_params(const clang::FunctionDecl *decl,
 void output_func_calls(const clang::FunctionDecl *decl,
                        std::string output_file_name);
 
+void output_func_locations(const clang::FunctionDecl *decl,
+                           std::string output_file_name);
+
 void output_macro_definitions(clang::CompilerInstance &compiler,
                               std::string output_file_name);
 

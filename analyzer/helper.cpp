@@ -531,6 +531,74 @@ void output_func_calls(const FunctionDecl *decl, std::string output_file_name) {
   output_file.close();
 }
 
+void output_func_locations(const FunctionDecl *decl,
+                           std::string output_file_name) {
+  if (!decl)
+    return;
+
+  const FunctionDecl *definition = decl->getDefinition();
+  if (!definition)
+    definition = decl;
+
+  if (!definition->doesThisDeclarationHaveABody())
+    return;
+
+  std::string funcName = definition->getNameAsString();
+  if (funcName.empty() ||
+      funcName.rfind("__compiletime_assert_", 0) == 0)
+    return;
+
+  ASTContext &context = definition->getASTContext();
+  const SourceManager &sourceManager = context.getSourceManager();
+
+  SourceLocation beginLoc = sourceManager.getSpellingLoc(definition->getBeginLoc());
+  SourceLocation endLoc = sourceManager.getSpellingLoc(definition->getEndLoc());
+
+  if (beginLoc.isInvalid() || endLoc.isInvalid())
+    return;
+
+  std::string filePath = get_real_path(sourceManager, beginLoc);
+  if (filePath.empty())
+    filePath = sourceManager.getFilename(beginLoc).str();
+
+  if (filePath.empty())
+    return;
+
+  unsigned startLine = sourceManager.getSpellingLineNumber(beginLoc);
+  unsigned startCol = sourceManager.getSpellingColumnNumber(beginLoc);
+  unsigned endLine = sourceManager.getSpellingLineNumber(endLoc);
+  unsigned endCol = sourceManager.getSpellingColumnNumber(endLoc);
+
+  unsigned tokenLength = Lexer::MeasureTokenLength(endLoc, sourceManager,
+                                                   context.getLangOpts());
+  if (tokenLength > 0)
+    endCol += tokenLength - 1;
+
+  std::lock_guard<std::mutex> lock(mutex);
+
+  std::ostringstream keyBuilder;
+  keyBuilder << filePath << ':' << startLine << ':' << startCol << ':'
+             << funcName << '+' << output_file_name;
+  std::string key = keyBuilder.str();
+  if (existing_filenames.find(key) != existing_filenames.end())
+    return;
+  existing_filenames.insert(key);
+
+  json j;
+  j["name"] = funcName;
+  j["filename"] = filePath;
+  j["startLine"] = startLine;
+  j["endLine"] = endLine;
+  j["startCol"] = startCol;
+  j["endCol"] = endCol;
+
+  std::ofstream output_file;
+  output_file.open(output_file_name, std::ios_base::app);
+  output_file << j.dump() << std::endl;
+  output_file.flush();
+  output_file.close();
+}
+
 void output_macro_definitions(CompilerInstance &compiler,
                               std::string output_file_name) {
   std::lock_guard<std::mutex> lock(mutex);
