@@ -19,6 +19,11 @@ std::mutex mutex;
 std::set<std::string> existing_filenames;
 static std::set<std::string> existing_macro_keys;
 
+static std::string get_real_path(const SourceManager &srcMgr,
+                                 SourceLocation loc);
+static std::string get_path_with_line(const SourceManager &srcMgr,
+                                      SourceLocation loc);
+
 static void output_macro(const std::string &macroName,
                          const std::string &macroBody,
                          const SourceManager &sourceManager,
