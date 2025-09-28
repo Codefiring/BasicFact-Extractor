@@ -17,7 +17,6 @@
 #include <clang/Tooling/JSONCompilationDatabase.h>
 #include <clang/Tooling/Tooling.h>
 #include <condition_variable>
-#include <filesystem>
 #include <fstream>
 #include <future>
 #include <iostream>

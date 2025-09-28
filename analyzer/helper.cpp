@@ -67,11 +67,17 @@ static std::string get_filename_from_path(const std::string &path) {
   if (path.empty())
     return "";
 
-  std::filesystem::path p(path);
-  if (p.has_filename())
-    return p.filename().string();
+  // Manually extract the filename to avoid depending on std::filesystem,
+  // which may not be available with the configured compiler flags.
+  size_t lastSlash = path.find_last_of("/\\");
+  if (lastSlash == std::string::npos)
+    return path;
 
-  return path;
+  size_t filenameStart = lastSlash + 1;
+  if (filenameStart >= path.size())
+    return "";
+
+  return path.substr(filenameStart);
 }
 
 std::string get_decl_code(const NamedDecl *decl) {
