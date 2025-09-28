@@ -1,5 +1,12 @@
 #include "helper.hpp"
+#include <clang/Lex/Lexer.h>
+#include <clang/Lex/MacroInfo.h>
+#include <clang/Lex/PreprocessingRecord.h>
+#include <clang/Lex/Preprocessor.h>
+#include <clang/Lex/Token.h>
 #include <llvm/ADT/APSInt.h>
+#include <llvm/Support/Casting.h>
+#include <cctype>
 #include <sstream>
 
 using namespace clang;
@@ -8,6 +15,7 @@ using json = nlohmann::json;
 
 std::mutex mutex;
 std::set<std::string> existing_filenames;
+static std::set<std::string> existing_macro_keys;
 
 static std::string get_real_path(const SourceManager &srcMgr,
                                  SourceLocation loc) {
@@ -519,6 +527,93 @@ void output_func_calls(const FunctionDecl *decl, std::string output_file_name) {
   std::ofstream output_file;
   output_file.open(output_file_name, std::ios_base::app);
   output_file << j.dump() << std::endl;
+  output_file.flush();
+  output_file.close();
+}
+
+void output_macro_definitions(CompilerInstance &compiler,
+                              std::string output_file_name) {
+  std::lock_guard<std::mutex> lock(mutex);
+
+  Preprocessor &pp = compiler.getPreprocessor();
+  PreprocessingRecord *record = pp.getPreprocessingRecord();
+  if (!record)
+    return;
+
+  SourceManager &sourceManager = compiler.getSourceManager();
+  const LangOptions &langOpts = compiler.getLangOpts();
+
+  std::vector<json> entries;
+  entries.reserve(32);
+
+  for (auto it = record->begin(); it != record->end(); ++it) {
+    const PreprocessedEntity *entity = *it;
+    if (!entity || entity->getKind() != PreprocessedEntity::MacroDefinitionKind)
+      continue;
+
+    const auto *macroRecord = llvm::cast<MacroDefinitionRecord>(entity);
+    IdentifierInfo *identifier = macroRecord->getName();
+    if (!identifier)
+      continue;
+
+    std::string macroName = identifier->getName().str();
+    if (macroName.empty())
+      continue;
+
+    MacroDefinition macroDef = macroRecord->getMacroDefinition();
+    const MacroInfo *macroInfo = macroDef.getMacroInfo();
+    if (!macroInfo)
+      continue;
+
+    SourceLocation defLoc = sourceManager.getSpellingLoc(macroInfo->getDefinitionLoc());
+    if (defLoc.isInvalid())
+      continue;
+
+    if (sourceManager.isWrittenInBuiltinFile(defLoc) ||
+        sourceManager.isWrittenInCommandLineFile(defLoc) ||
+        sourceManager.isInSystemHeader(defLoc))
+      continue;
+
+    std::string locationKey = get_path_with_line(sourceManager, defLoc);
+    if (locationKey.empty())
+      locationKey = macroName;
+
+    std::string key = locationKey + "+" + macroName + "+" + output_file_name;
+    if (existing_macro_keys.find(key) != existing_macro_keys.end())
+      continue;
+    existing_macro_keys.insert(key);
+
+    std::string body;
+    for (const Token &token : macroInfo->tokens()) {
+      if (token.is(tok::eod))
+        continue;
+
+      bool invalid = false;
+      std::string spelling = Lexer::getSpelling(token, sourceManager, langOpts, &invalid);
+      if (invalid)
+        continue;
+
+      if (!body.empty() && (token.hasLeadingSpace() ||
+                            (isalnum(static_cast<unsigned char>(body.back())) &&
+                             isalnum(static_cast<unsigned char>(spelling.front())))))
+        body.push_back(' ');
+
+      body += spelling;
+    }
+
+    json j;
+    j["name"] = macroName;
+    j["source"] = body;
+    entries.push_back(std::move(j));
+  }
+
+  if (entries.empty())
+    return;
+
+  std::ofstream output_file;
+  output_file.open(output_file_name, std::ios_base::app);
+  for (const auto &entry : entries)
+    output_file << entry.dump() << std::endl;
   output_file.flush();
   output_file.close();
 }

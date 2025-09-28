@@ -169,7 +169,13 @@ public:
   std::unique_ptr<clang::ASTConsumer>
   CreateASTConsumer(clang::CompilerInstance &compiler,
                     llvm::StringRef) override {
+    compiler.getPreprocessor().createPreprocessingRecord();
     return std::make_unique<StructConsumer>(&compiler.getASTContext());
+  }
+
+  void EndSourceFileAction() override {
+    output_macro_definitions(getCompilerInstance(), "macro.jsonl");
+    clang::ASTFrontendAction::EndSourceFileAction();
   }
 };
 
