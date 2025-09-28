@@ -626,7 +626,7 @@ void output_macro_definitions(CompilerInstance &compiler,
       continue;
 
     const auto *macroRecord = llvm::cast<MacroDefinitionRecord>(entity);
-    IdentifierInfo *identifier = macroRecord->getName();
+    const IdentifierInfo *identifier = macroRecord->getName();
     if (!identifier)
       continue;
 
