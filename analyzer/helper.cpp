@@ -1,4 +1,5 @@
 #include "helper.hpp"
+#include <clang/Basic/Version.h>
 #include <clang/Lex/Lexer.h>
 #include <clang/Lex/MacroInfo.h>
 #include <clang/Lex/PreprocessingRecord.h>
@@ -17,20 +18,12 @@ std::mutex mutex;
 std::set<std::string> existing_filenames;
 static std::set<std::string> existing_macro_keys;
 
-template <typename RecordT>
-auto get_macro_definition_impl(RecordT *record, int)
-    -> decltype(record->getMacroDefinition()) {
-  return record->getMacroDefinition();
-}
-
-template <typename RecordT>
-auto get_macro_definition_impl(RecordT *record, long)
-    -> decltype(record->getDefinition()) {
-  return record->getDefinition();
-}
-
 static MacroDefinition fetch_macro_definition(MacroDefinitionRecord *record) {
-  return get_macro_definition_impl(record, 0);
+#if defined(CLANG_VERSION_MAJOR) && CLANG_VERSION_MAJOR >= 15
+  return record->getMacroDefinition();
+#else
+  return record->getDefinition();
+#endif
 }
 
 static std::string get_real_path(const SourceManager &srcMgr,
