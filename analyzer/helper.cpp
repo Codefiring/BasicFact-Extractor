@@ -17,6 +17,22 @@ std::mutex mutex;
 std::set<std::string> existing_filenames;
 static std::set<std::string> existing_macro_keys;
 
+template <typename RecordT>
+auto get_macro_definition_impl(RecordT *record, int)
+    -> decltype(record->getMacroDefinition()) {
+  return record->getMacroDefinition();
+}
+
+template <typename RecordT>
+auto get_macro_definition_impl(RecordT *record, long)
+    -> decltype(record->getDefinition()) {
+  return record->getDefinition();
+}
+
+static MacroDefinition fetch_macro_definition(MacroDefinitionRecord *record) {
+  return get_macro_definition_impl(record, 0);
+}
+
 static std::string get_real_path(const SourceManager &srcMgr,
                                  SourceLocation loc) {
   if (loc.isInvalid())
@@ -634,7 +650,7 @@ void output_macro_definitions(CompilerInstance &compiler,
     if (macroName.empty())
       continue;
 
-    MacroDefinition macroDef = macroRecord->getMacroDefinition();
+    MacroDefinition macroDef = fetch_macro_definition(macroRecord);
     const MacroInfo *macroInfo = macroDef.getMacroInfo();
     if (!macroInfo)
       continue;
