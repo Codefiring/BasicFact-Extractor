@@ -11,6 +11,8 @@
 #include <clang/AST/Expr.h>
 #include <clang/AST/Type.h>
 #include <clang/AST/RecursiveASTVisitor.h>
+#include <clang/Lex/PPCallbacks.h>
+#include <clang/Lex/Preprocessor.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/FrontendActions.h>
 #include <clang/Tooling/CommonOptionsParser.h>
@@ -22,6 +24,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <memory>
 #include <set>
 #include <string>
 #include <thread>
@@ -73,7 +76,8 @@ void output_func_calls(const clang::FunctionDecl *decl,
 void output_func_locations(const clang::FunctionDecl *decl,
                            std::string output_file_name);
 
-void output_macro_definitions(clang::CompilerInstance &compiler,
-                              std::string output_file_name);
+std::unique_ptr<clang::PPCallbacks>
+create_macro_collector(clang::Preprocessor &preprocessor,
+                       const std::string &output_file_name);
 
 #endif

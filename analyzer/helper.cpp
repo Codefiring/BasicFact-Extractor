@@ -1,4 +1,5 @@
 #include "helper.hpp"
+#include <clang/Basic/FileManager.h>
 #include <clang/Lex/Lexer.h>
 #include <clang/Lex/MacroInfo.h>
 #include <clang/Lex/PPCallbacks.h>
@@ -17,42 +18,49 @@ using json = nlohmann::json;
 
 std::mutex mutex;
 std::set<std::string> existing_filenames;
-static std::set<std::string> existing_macro_keys;
 
 static std::string get_real_path(const SourceManager &srcMgr,
                                  SourceLocation loc);
 static std::string get_path_with_line(const SourceManager &srcMgr,
                                       SourceLocation loc);
 
-static void output_macro(const std::string &macroName,
-                         const std::string &macroBody,
+static void output_macro(const std::string &name,
+                         const std::string &definition,
                          const SourceManager &sourceManager,
                          SourceLocation beginLoc,
                          const std::string &output_file_name) {
-  SourceLocation spellingLoc = sourceManager.getSpellingLoc(beginLoc);
-  if (spellingLoc.isInvalid())
-    return;
-
-  std::string locationKey = get_path_with_line(sourceManager, spellingLoc);
-  if (locationKey.empty())
-    locationKey = macroName;
-
-  std::string key = locationKey + "+" + macroName + "+" + output_file_name;
-
   std::lock_guard<std::mutex> lock(mutex);
-  if (existing_macro_keys.find(key) != existing_macro_keys.end())
-    return;
-  existing_macro_keys.insert(key);
+
+  std::stringstream filenameWithLine;
+  if (beginLoc.isValid()) {
+    SourceLocation spellingLoc = sourceManager.getSpellingLoc(beginLoc);
+    if (const FileEntry *fileEntry = sourceManager.getFileEntryForID(
+            sourceManager.getFileID(spellingLoc))) {
+      filenameWithLine << fileEntry->tryGetRealPathName().str();
+    } else {
+      filenameWithLine << spellingLoc.printToString(sourceManager);
+    }
+    unsigned lineNumber = sourceManager.getSpellingLineNumber(spellingLoc);
+    filenameWithLine << ":" << lineNumber;
+  }
+
+  std::string filename = filenameWithLine.str();
+  std::string key_name = filename + "+" + name + "+" + output_file_name;
+  if (!filename.empty()) {
+    if (existing_filenames.find(key_name) != existing_filenames.end())
+      return;
+    existing_filenames.insert(key_name);
+  }
 
   std::ofstream output_file;
   output_file.open(output_file_name, std::ios_base::app);
-  if (!output_file.is_open())
-    return;
 
-  json j;
-  j["name"] = macroName;
-  j["source"] = macroBody;
-  output_file << j.dump() << std::endl;
+  json j = json::object();
+  j["name"] = name;
+  j["source"] = definition;
+
+  auto json_str = j.dump();
+  output_file << json_str << std::endl;
   output_file.flush();
   output_file.close();
 }
@@ -712,8 +720,8 @@ void output_func_locations(const FunctionDecl *decl,
   output_file.close();
 }
 
-void output_macro_definitions(CompilerInstance &compiler,
-                              std::string output_file_name) {
-  Preprocessor &pp = compiler.getPreprocessor();
-  pp.addPPCallbacks(std::make_unique<MacroCollector>(pp, output_file_name));
+std::unique_ptr<PPCallbacks>
+create_macro_collector(Preprocessor &preprocessor,
+                       const std::string &output_file_name) {
+  return std::make_unique<MacroCollector>(preprocessor, output_file_name);
 }
