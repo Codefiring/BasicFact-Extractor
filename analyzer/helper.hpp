@@ -9,19 +9,22 @@
 #include <clang/AST/ASTConsumer.h>
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Expr.h>
+#include <clang/AST/Type.h>
 #include <clang/AST/RecursiveASTVisitor.h>
+#include <clang/Lex/PPCallbacks.h>
+#include <clang/Lex/Preprocessor.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/FrontendActions.h>
 #include <clang/Tooling/CommonOptionsParser.h>
 #include <clang/Tooling/JSONCompilationDatabase.h>
 #include <clang/Tooling/Tooling.h>
 #include <condition_variable>
-#include <filesystem>
 #include <fstream>
 #include <future>
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <memory>
 #include <set>
 #include <string>
 #include <thread>
@@ -56,5 +59,25 @@ private:
 std::string get_decl_code(const clang::NamedDecl *);
 void output_decl(const clang::NamedDecl *decl, std::string output_file_name,
                  bool is_typedef = false, std::string alias_name = "");
+
+void output_enum_values(const clang::EnumDecl *decl,
+                        std::string output_file_name);
+
+void output_struct_relations(const clang::RecordDecl *decl,
+                             std::string output_file_name,
+                             std::string struct_name = "");
+
+void output_func_params(const clang::FunctionDecl *decl,
+                        std::string output_file_name);
+
+void output_func_calls(const clang::FunctionDecl *decl,
+                       std::string output_file_name);
+
+void output_func_locations(const clang::FunctionDecl *decl,
+                           std::string output_file_name);
+
+std::unique_ptr<clang::PPCallbacks>
+create_macro_collector(clang::Preprocessor &preprocessor,
+                       const std::string &output_file_name);
 
 #endif

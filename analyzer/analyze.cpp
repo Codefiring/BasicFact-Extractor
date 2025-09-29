@@ -18,9 +18,14 @@ public:
       return true;
     if (funcDecl->isThisDeclarationADefinition()) {
       std::string funcName = funcDecl->getNameAsString();
+      if (funcName.empty() ||
+          funcName.rfind("__compiletime_assert_", 0) == 0)
+        return true;
       std::string sourceCode = get_decl_code(funcDecl);
-      if (funcName != "")
-        output_decl(funcDecl, "func.jsonl");
+      output_decl(funcDecl, "func.jsonl");
+      output_func_params(funcDecl, "func-param.jsonl");
+      output_func_calls(funcDecl, "func-call.jsonl");
+      output_func_locations(funcDecl, "func-location.jsonl");
     }
     return true;
   }
@@ -32,6 +37,8 @@ public:
         std::string sourceCode = get_decl_code(recordDecl);
         if (structName != "")
           output_decl(recordDecl, "struct.jsonl");
+        if (recordDecl->isStruct())
+          output_struct_relations(recordDecl, "struct-value.jsonl");
       }
     }
     return true;
@@ -45,8 +52,10 @@ public:
       std::string sourceCode = get_decl_code(enumDecl);
 
       // Output the enum definition
-      if (enumName != "")
+      if (enumName != "") {
         output_decl(enumDecl, "enum.jsonl");
+        output_enum_values(enumDecl, "enum-value.jsonl");
+      }
     }
     return true;
   }
@@ -71,8 +80,11 @@ public:
         std::string aliasName = typedefDecl->getNameAsString();
 
         // Output the typedef alias
-        if (aliasName != "")
+        if (aliasName != "") {
           output_decl(typedefDecl, "struct-typedef.jsonl", true, structName);
+          if (recordDecl->isStruct())
+            output_struct_relations(recordDecl, "struct-value.jsonl", aliasName);
+        }
       }
     }
     if (collect_typedef) {
@@ -158,6 +170,8 @@ public:
   std::unique_ptr<clang::ASTConsumer>
   CreateASTConsumer(clang::CompilerInstance &compiler,
                     llvm::StringRef) override {
+    compiler.getPreprocessor().addPPCallbacks(
+        create_macro_collector(compiler.getPreprocessor(), "macro.jsonl"));
     return std::make_unique<StructConsumer>(&compiler.getASTContext());
   }
 };
